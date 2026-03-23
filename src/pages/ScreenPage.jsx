@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { QRCodeCanvas } from "qrcode.react";
 import { useGameState } from "../hooks/useGameState.js";
@@ -31,6 +31,7 @@ export default function ScreenPage() {
   const { players } = usePlayers();
   const explosionLock = useRef(false);
   const lastActionAtRef = useRef(0);
+  const [seedError, setSeedError] = useState("");
   const controllerTokenRef = useRef(
     localStorage.getItem("hot-potato-controller-token") || crypto.randomUUID()
   );
@@ -47,8 +48,12 @@ export default function ScreenPage() {
   const isHost =
     gameState?.controllerToken === controllerTokenRef.current &&
     (gameState?.controllerExpiresAt ?? 0) > Date.now();
+  const isHostUser = Boolean(
+    user?.uid && gameState?.hostUid && user.uid === gameState.hostUid
+  );
   const aliveCount = players.filter((p) => p.alive).length;
   const canStart = isHost && aliveCount >= 2 && gameState.phase === "lobby";
+  const canSeed = isHost && isHostUser && gameState.phase === "lobby";
 
   useEffect(() => {
     if (!gameState || gameState.phase !== "playing" || !isHost) return;
@@ -167,12 +172,29 @@ export default function ScreenPage() {
             <div style={{ marginTop: "12px" }}>
               <button
                 className="button secondary"
-                onClick={() => seedTestPlayers(controllerTokenRef.current, 4)}
-                disabled={!isHost || gameState.phase !== "lobby"}
+                onClick={async () => {
+                  setSeedError("");
+                  try {
+                    await seedTestPlayers(controllerTokenRef.current, 4);
+                  } catch (err) {
+                    setSeedError(err?.message ?? "Failed to add test players.");
+                  }
+                }}
+                disabled={!canSeed}
               >
                 Add Test Players
               </button>
             </div>
+            {seedError && (
+              <p className="subtitle" style={{ marginTop: "8px" }}>
+                {seedError}
+              </p>
+            )}
+            {!isHostUser && isHost && (
+              <p className="subtitle" style={{ marginTop: "8px" }}>
+                Waiting for host auth to sync. Refresh if this persists.
+              </p>
+            )}
             <p className="subtitle" style={{ marginTop: "12px" }}>
               Controller: {isHost ? "You are live" : "Another screen is controlling"}
             </p>

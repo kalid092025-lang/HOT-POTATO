@@ -256,9 +256,16 @@ export async function pruneInactivePlayers(
 export async function seedTestPlayers(hostToken, count = 4) {
   const ref = gameRef();
   const snap = await getDoc(ref);
-  if (!snap.exists()) return;
+  if (!snap.exists()) {
+    throw new Error("Game not found.");
+  }
   const data = snap.data();
-  if (!isHost(data, hostToken)) return;
+  if (!isHost(data, hostToken)) {
+    throw new Error("Not the active host.");
+  }
+  if (!data.hostUid) {
+    throw new Error("Host auth not ready yet.");
+  }
 
   const batch = writeBatch(db);
   const usedNames = new Set();
