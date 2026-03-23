@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export default function TaskCard({ task, onComplete, players }) {
   const [tapCount, setTapCount] = useState(0);
@@ -7,10 +7,17 @@ export default function TaskCard({ task, onComplete, players }) {
 
   const choiceOptions = useMemo(() => {
     if (task?.type !== "choose") return [];
-    return task.options ?? players ?? [];
+    if (players && players.length) return players;
+    return task.options ?? [];
   }, [task, players]);
 
   if (!task) return null;
+
+  useEffect(() => {
+    setTapCount(0);
+    setAnswer("");
+    setTyped("");
+  }, [task?.title, task?.prompt, task?.type]);
 
   return (
     <div className="card">

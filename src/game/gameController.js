@@ -8,7 +8,7 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
-  writeBatch
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "../firebase.js";
 import { generateTask } from "./tasks.js";
@@ -62,7 +62,7 @@ export async function ensureGameDoc() {
       controllerHeartbeatAt: 0,
       qrNonce: crypto.randomUUID(),
       joinToken: crypto.randomUUID(),
-      updatedAt: serverTimestamp()
+      updatedAt: serverTimestamp(),
     });
     return;
   }
@@ -72,7 +72,7 @@ export async function ensureGameDoc() {
     await updateDoc(ref, {
       joinToken: crypto.randomUUID(),
       qrNonce: crypto.randomUUID(),
-      updatedAt: serverTimestamp()
+      updatedAt: serverTimestamp(),
     });
   }
 }
@@ -91,7 +91,7 @@ export async function claimHostLock(controllerToken, hostUid) {
       controllerExpiresAt: now + HOST_TTL_MS,
       controllerHeartbeatAt: now,
       hostUid: hostUid ?? data.hostUid ?? null,
-      updatedAt: serverTimestamp()
+      updatedAt: serverTimestamp(),
     });
   }
 }
@@ -107,7 +107,7 @@ export async function updateHostToken(controllerToken) {
     tx.update(ref, {
       previousHostToken: data.hostToken ?? null,
       hostToken: nextToken,
-      updatedAt: serverTimestamp()
+      updatedAt: serverTimestamp(),
     });
   });
 }
@@ -122,7 +122,7 @@ export async function regenerateQr(hostToken) {
     tx.update(ref, {
       qrNonce: crypto.randomUUID(),
       joinToken: crypto.randomUUID(),
-      updatedAt: serverTimestamp()
+      updatedAt: serverTimestamp(),
     });
   });
 }
@@ -138,7 +138,7 @@ export async function heartbeatHost(controllerToken, hostUid) {
     controllerExpiresAt: now + HOST_TTL_MS,
     controllerHeartbeatAt: now,
     hostUid: hostUid ?? data.hostUid ?? null,
-    updatedAt: serverTimestamp()
+    updatedAt: serverTimestamp(),
   });
 }
 
@@ -155,7 +155,7 @@ export async function joinGame(name, playerId, joinToken) {
     action: null,
     actionAt: 0,
     lastSeenAt: Date.now(),
-    createdAt: Date.now()
+    createdAt: Date.now(),
   };
 
   const playersSnap = await getDocs(playersRef());
@@ -181,7 +181,7 @@ export async function joinGame(name, playerId, joinToken) {
       controllerHeartbeatAt: 0,
       qrNonce: crypto.randomUUID(),
       joinToken: crypto.randomUUID(),
-      updatedAt: serverTimestamp()
+      updatedAt: serverTimestamp(),
     });
   }
   const latestSnap = await getDoc(ref);
@@ -195,8 +195,10 @@ export async function joinGame(name, playerId, joinToken) {
     const gameSnap = await tx.get(ref);
     const data = gameSnap.data() ?? { feed: [] };
     tx.update(ref, {
-      feed: [...(data.feed ?? []), `${player.name} joined the chaos.`].slice(-30),
-      updatedAt: serverTimestamp()
+      feed: [...(data.feed ?? []), `${player.name} joined the chaos.`].slice(
+        -30,
+      ),
+      updatedAt: serverTimestamp(),
     });
   });
 
@@ -206,27 +208,30 @@ export async function joinGame(name, playerId, joinToken) {
 export async function submitPlayerAction(playerId, action) {
   await updateDoc(playerRef(playerId), {
     action,
-    actionAt: Date.now()
+    actionAt: Date.now(),
   });
 }
 
 export async function clearPlayerAction(playerId) {
   await updateDoc(playerRef(playerId), {
-    action: null
+    action: null,
   });
 }
 
 export async function heartbeatPlayer(playerId) {
   try {
     await updateDoc(playerRef(playerId), {
-      lastSeenAt: Date.now()
+      lastSeenAt: Date.now(),
     });
   } catch (err) {
     // Ignore missing player docs after lobby reset.
   }
 }
 
-export async function pruneInactivePlayers(hostToken, maxAgeMs = PLAYER_TTL_MS) {
+export async function pruneInactivePlayers(
+  hostToken,
+  maxAgeMs = PLAYER_TTL_MS,
+) {
   const ref = gameRef();
   const snap = await getDoc(ref);
   if (!snap.exists()) return;
@@ -265,7 +270,7 @@ export async function endGameIfSolo(hostToken) {
     bombTimer: 0,
     currentTask: null,
     feed: [...(data.feed ?? []), `${winnerName} wins by default.`].slice(-30),
-    updatedAt: serverTimestamp()
+    updatedAt: serverTimestamp(),
   });
 }
 
@@ -292,8 +297,10 @@ export async function startGame(hostToken) {
     bombHolderId: firstHolder.id,
     bombTimer: duration,
     currentTask: task,
-    feed: [...(data.feed ?? []), `${firstHolder.name} got the bomb.`].slice(-30),
-    updatedAt: serverTimestamp()
+    feed: [...(data.feed ?? []), `${firstHolder.name} got the bomb.`].slice(
+      -30,
+    ),
+    updatedAt: serverTimestamp(),
   });
 }
 
@@ -326,8 +333,9 @@ export async function passBomb(hostToken, nextHolderId, reason = "passed") {
   const filtered = alivePlayers.filter((p) => p.id !== data.bombHolderId);
   const pool = filtered.length > 0 ? filtered : alivePlayers;
   const nextHolder =
-    (candidate && candidate.alive && candidate.id !== data.bombHolderId ? candidate : null) ||
-    pool[Math.floor(Math.random() * pool.length)];
+    (candidate && candidate.alive && candidate.id !== data.bombHolderId
+      ? candidate
+      : null) || pool[Math.floor(Math.random() * pool.length)];
   const duration = getRandomTimer();
   const task = generateTask(alivePlayers);
   await updateDoc(ref, {
@@ -336,9 +344,9 @@ export async function passBomb(hostToken, nextHolderId, reason = "passed") {
     currentTask: task,
     feed: [
       ...(data.feed ?? []),
-      `${current?.name ?? "Someone"} ${reason} to ${nextHolder.name}.`
+      `${current?.name ?? "Someone"} ${reason} to ${nextHolder.name}.`,
     ].slice(-30),
-    updatedAt: serverTimestamp()
+    updatedAt: serverTimestamp(),
   });
 }
 
@@ -351,7 +359,7 @@ export async function explodeBomb(hostToken) {
   const playersSnap = await getDocs(playersRef());
   const players = playersSnap.docs.map((docSnap) => ({
     ref: docSnap.ref,
-    ...docSnap.data()
+    ...docSnap.data(),
   }));
   const holder = players.find((p) => p.id === data.bombHolderId);
   if (!holder) return;
@@ -362,21 +370,24 @@ export async function explodeBomb(hostToken) {
       batch.update(player.ref, {
         alive: false,
         isGhost: true,
-        avatar: getGhostAvatar(player.name)
+        avatar: getGhostAvatar(player.name),
       });
     } else if (player.alive) {
       batch.update(player.ref, { score: (player.score ?? 0) + 1 });
     }
   });
-  const aliveCount = players.filter((p) => p.id !== holder.id && p.alive).length;
-  const nextPhase = aliveCount <= 1 ? "gameover" : aliveCount <= 2 ? "final" : "playing";
+  const aliveCount = players.filter(
+    (p) => p.id !== holder.id && p.alive,
+  ).length;
+  const nextPhase =
+    aliveCount <= 1 ? "gameover" : aliveCount <= 2 ? "final" : "playing";
   batch.update(ref, {
     bombHolderId: null,
     bombTimer: 0,
     phase: nextPhase,
     currentTask: null,
     feed: [...(data.feed ?? []), `${holder.name} exploded!`].slice(-30),
-    updatedAt: serverTimestamp()
+    updatedAt: serverTimestamp(),
   });
   await batch.commit();
 }
@@ -401,11 +412,11 @@ export async function resetToLobby(hostToken) {
     feed: [],
     qrNonce: crypto.randomUUID(),
     joinToken: crypto.randomUUID(),
-    updatedAt: serverTimestamp()
+    updatedAt: serverTimestamp(),
   });
   await batch.commit();
 }
 
 export function getRandomTimer() {
-  return Math.floor(Math.random() * 16) + 15;
+  return Math.floor(Math.random() * 16) + 60;
 }
