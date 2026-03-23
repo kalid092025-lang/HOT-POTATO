@@ -6,9 +6,11 @@ import { usePlayers } from "../hooks/usePlayers.js";
 import {
   clearPlayerAction,
   claimHostLock,
+  endGameIfSolo,
   explodeBomb,
   heartbeatHost,
   passBomb,
+  pruneInactivePlayers,
   resetToLobby,
   regenerateQr,
   startGame,
@@ -54,6 +56,14 @@ export default function ScreenPage() {
     }, 1000);
     return () => clearInterval(interval);
   }, [gameState?.phase, isHost]);
+
+  useEffect(() => {
+    if (!isHost) return;
+    const interval = setInterval(() => {
+      pruneInactivePlayers(controllerTokenRef.current);
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [isHost]);
 
   useEffect(() => {
     if (!gameState || gameState.phase !== "playing" || !isHost) return;
@@ -104,6 +114,18 @@ export default function ScreenPage() {
     }
     clearPlayerAction(holder.id);
   }, [isHost, gameState, holder, players]);
+
+  useEffect(() => {
+    if (!isHost || !gameState || gameState.phase !== "playing") return;
+    const alivePlayers = players.filter((p) => p.alive);
+    if (alivePlayers.length <= 1) {
+      endGameIfSolo(controllerTokenRef.current);
+      return;
+    }
+    if (gameState.bombHolderId && !alivePlayers.some((p) => p.id === gameState.bombHolderId)) {
+      passBomb(controllerTokenRef.current, undefined, "dropped");
+    }
+  }, [isHost, gameState?.bombHolderId, gameState?.phase, players]);
 
   if (loading || !gameState) {
     return (
@@ -174,7 +196,7 @@ export default function ScreenPage() {
             </div>
             <div className="qr" style={{ marginTop: "16px" }}>
               <QRCodeCanvas
-                value={`${window.location.origin}/play?game=default&k=${gameState.qrNonce ?? ""}`}
+                value={`${window.location.origin}/play?game=default&k=${gameState.joinToken ?? ""}`}
                 size={140}
               />
             </div>

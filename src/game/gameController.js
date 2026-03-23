@@ -16,6 +16,7 @@ import { getGhostAvatar, getRandomAvatar } from "./avatars.js";
 
 const GAME_ID = "default";
 const HOST_TTL_MS = 20000;
+const PLAYER_TTL_MS = 30000;
 const HOST_TOKEN = import.meta.env.VITE_HOST_TOKEN || "dev-host-token";
 
 function gameRef() {
@@ -59,6 +60,17 @@ export async function ensureGameDoc() {
       controllerToken: null,
       controllerExpiresAt: 0,
       controllerHeartbeatAt: 0,
+      qrNonce: crypto.randomUUID(),
+      joinToken: crypto.randomUUID(),
+      updatedAt: serverTimestamp()
+    });
+    return;
+  }
+
+  const data = snap.data();
+  if (!data.joinToken) {
+    await updateDoc(ref, {
+      joinToken: crypto.randomUUID(),
       qrNonce: crypto.randomUUID(),
       updatedAt: serverTimestamp()
     });
@@ -109,6 +121,7 @@ export async function regenerateQr(hostToken) {
     if (!isHost(data, hostToken)) return;
     tx.update(ref, {
       qrNonce: crypto.randomUUID(),
+      joinToken: crypto.randomUUID(),
       updatedAt: serverTimestamp()
     });
   });
@@ -129,7 +142,7 @@ export async function heartbeatHost(controllerToken, hostUid) {
   });
 }
 
-export async function joinGame(name, playerId) {
+export async function joinGame(name, playerId, joinToken) {
   const safeName = name.trim();
   const player = {
     id: playerId,
@@ -141,6 +154,7 @@ export async function joinGame(name, playerId) {
     score: 0,
     action: null,
     actionAt: 0,
+    lastSeenAt: Date.now(),
     createdAt: Date.now()
   };
 
@@ -166,8 +180,14 @@ export async function joinGame(name, playerId) {
       controllerExpiresAt: 0,
       controllerHeartbeatAt: 0,
       qrNonce: crypto.randomUUID(),
+      joinToken: crypto.randomUUID(),
       updatedAt: serverTimestamp()
     });
+  }
+  const latestSnap = await getDoc(ref);
+  const latest = latestSnap.data();
+  if (latest?.joinToken && latest.joinToken !== joinToken) {
+    throw new Error("This lobby link is no longer valid.");
   }
 
   await setDoc(playerRef(playerId), player);
@@ -193,6 +213,59 @@ export async function submitPlayerAction(playerId, action) {
 export async function clearPlayerAction(playerId) {
   await updateDoc(playerRef(playerId), {
     action: null
+  });
+}
+
+export async function heartbeatPlayer(playerId) {
+  try {
+    await updateDoc(playerRef(playerId), {
+      lastSeenAt: Date.now()
+    });
+  } catch (err) {
+    // Ignore missing player docs after lobby reset.
+  }
+}
+
+export async function pruneInactivePlayers(hostToken, maxAgeMs = PLAYER_TTL_MS) {
+  const ref = gameRef();
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  const data = snap.data();
+  if (!isHost(data, hostToken)) return;
+
+  const playersSnap = await getDocs(playersRef());
+  const cutoff = Date.now() - maxAgeMs;
+  const batch = writeBatch(db);
+  playersSnap.forEach((playerDoc) => {
+    const player = playerDoc.data();
+    if ((player.lastSeenAt ?? 0) < cutoff) {
+      batch.delete(playerDoc.ref);
+    }
+  });
+  await batch.commit();
+}
+
+export async function endGameIfSolo(hostToken) {
+  const ref = gameRef();
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  const data = snap.data();
+  if (!isHost(data, hostToken)) return;
+  if (data.phase !== "playing") return;
+
+  const playersSnap = await getDocs(playersRef());
+  const players = playersSnap.docs.map((docSnap) => docSnap.data());
+  const alivePlayers = players.filter((p) => p.alive);
+  if (alivePlayers.length > 1) return;
+
+  const winnerName = alivePlayers[0]?.name ?? "Someone";
+  await updateDoc(ref, {
+    phase: "gameover",
+    bombHolderId: null,
+    bombTimer: 0,
+    currentTask: null,
+    feed: [...(data.feed ?? []), `${winnerName} wins by default.`].slice(-30),
+    updatedAt: serverTimestamp()
   });
 }
 
@@ -309,21 +382,28 @@ export async function explodeBomb(hostToken) {
 }
 
 export async function resetToLobby(hostToken) {
-  await runTransaction(db, async (tx) => {
-    const ref = gameRef();
-    const snap = await tx.get(ref);
-    if (!snap.exists()) return;
-    const data = snap.data();
-    if (!isHost(data, hostToken)) return;
-    tx.update(ref, {
-      phase: "lobby",
-      bombHolderId: null,
-      bombTimer: 0,
-      currentTask: null,
-      feed: [],
-      updatedAt: serverTimestamp()
-    });
+  const ref = gameRef();
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  const data = snap.data();
+  if (!isHost(data, hostToken)) return;
+
+  const playersSnap = await getDocs(playersRef());
+  const batch = writeBatch(db);
+  playersSnap.forEach((playerDoc) => {
+    batch.delete(playerDoc.ref);
   });
+  batch.update(ref, {
+    phase: "lobby",
+    bombHolderId: null,
+    bombTimer: 0,
+    currentTask: null,
+    feed: [],
+    qrNonce: crypto.randomUUID(),
+    joinToken: crypto.randomUUID(),
+    updatedAt: serverTimestamp()
+  });
+  await batch.commit();
 }
 
 export function getRandomTimer() {

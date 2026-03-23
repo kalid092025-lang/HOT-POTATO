@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { QRCodeCanvas } from "qrcode.react";
 import { useGameState } from "../hooks/useGameState.js";
 import { usePlayers } from "../hooks/usePlayers.js";
-import { joinGame, submitPlayerAction } from "../game/gameController.js";
+import { heartbeatPlayer, joinGame, submitPlayerAction } from "../game/gameController.js";
 import Lobby from "../components/Lobby.jsx";
 import TaskCard from "../components/TaskCard.jsx";
 import Scoreboard from "../components/Scoreboard.jsx";
@@ -14,6 +14,9 @@ export default function PlayerPage() {
   const [name, setName] = useState("");
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState("");
+  const [joinToken] = useState(
+    () => new URLSearchParams(window.location.search).get("k") ?? ""
+  );
 
   const playerId = user?.uid;
   const player = useMemo(() => {
@@ -28,13 +31,22 @@ export default function PlayerPage() {
     if (!name.trim() || !playerId) return;
     setJoining(true);
     try {
-      await joinGame(name, playerId);
+      await joinGame(name, playerId, joinToken);
     } catch (err) {
       setError(err.message ?? "Could not join.");
     } finally {
       setJoining(false);
     }
   };
+
+  useEffect(() => {
+    if (!playerId || !player) return;
+    heartbeatPlayer(playerId);
+    const interval = setInterval(() => {
+      heartbeatPlayer(playerId);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [playerId, player]);
 
   if (loading || !gameState) {
     return (
@@ -95,7 +107,7 @@ export default function PlayerPage() {
               <p className="subtitle">Scan to join at /play</p>
               <div className="qr">
                 <QRCodeCanvas
-                  value={`${window.location.origin}/play?game=default&k=${gameState.qrNonce ?? ""}`}
+                  value={`${window.location.origin}/play?game=default&k=${gameState.joinToken ?? ""}`}
                   size={140}
                 />
               </div>
