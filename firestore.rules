@@ -16,7 +16,13 @@ service cloud.firestore {
     match /games/{gameId}/players/{playerId} {
       allow read: if true;
       allow create: if request.auth != null
-        && request.auth.uid == playerId;
+        && (
+          request.auth.uid == playerId
+          || (
+            request.auth.uid == get(/databases/$(database)/documents/games/$(gameId)).data.hostUid
+            && request.resource.data.isTest == true
+          )
+        );
       allow update: if request.auth != null
         && (
           request.auth.uid == playerId

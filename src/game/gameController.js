@@ -18,6 +18,7 @@ const GAME_ID = "default";
 const HOST_TTL_MS = 20000;
 const PLAYER_TTL_MS = 30000;
 const HOST_TOKEN = import.meta.env.VITE_HOST_TOKEN || "dev-host-token";
+const TEST_NAMES = ["Nova", "Blaze", "Echo", "Riot", "Jinx", "Vex", "Nyx", "Zed"];
 
 function gameRef() {
   return doc(db, "games", GAME_ID);
@@ -62,6 +63,7 @@ export async function ensureGameDoc() {
       controllerHeartbeatAt: 0,
       qrNonce: crypto.randomUUID(),
       joinToken: crypto.randomUUID(),
+      startedAt: null,
       updatedAt: serverTimestamp(),
     });
     return;
@@ -181,6 +183,7 @@ export async function joinGame(name, playerId, joinToken) {
       controllerHeartbeatAt: 0,
       qrNonce: crypto.randomUUID(),
       joinToken: crypto.randomUUID(),
+      startedAt: null,
       updatedAt: serverTimestamp(),
     });
   }
@@ -250,6 +253,41 @@ export async function pruneInactivePlayers(
   await batch.commit();
 }
 
+export async function seedTestPlayers(hostToken, count = 4) {
+  const ref = gameRef();
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  const data = snap.data();
+  if (!isHost(data, hostToken)) return;
+
+  const batch = writeBatch(db);
+  const usedNames = new Set();
+  for (let i = 0; i < count; i += 1) {
+    const id = crypto.randomUUID();
+    const base =
+      TEST_NAMES[(Math.floor(Math.random() * TEST_NAMES.length) + i) % TEST_NAMES.length];
+    const name = `${base} ${Math.floor(Math.random() * 90 + 10)}`;
+    if (usedNames.has(name)) continue;
+    usedNames.add(name);
+    batch.set(playerRef(id), {
+      id,
+      name,
+      nameLower: name.toLowerCase(),
+      avatar: getRandomAvatar(name),
+      alive: true,
+      isGhost: false,
+      score: 0,
+      action: null,
+      actionAt: 0,
+      lastSeenAt: Date.now(),
+      createdAt: Date.now(),
+      isTest: true,
+    });
+  }
+
+  await batch.commit();
+}
+
 export async function endGameIfSolo(hostToken) {
   const ref = gameRef();
   const snap = await getDoc(ref);
@@ -297,6 +335,7 @@ export async function startGame(hostToken) {
     bombHolderId: firstHolder.id,
     bombTimer: duration,
     currentTask: task,
+    startedAt: serverTimestamp(),
     feed: [...(data.feed ?? []), `${firstHolder.name} got the bomb.`].slice(
       -30,
     ),
@@ -308,10 +347,11 @@ export async function tickBomb(hostToken) {
   await runTransaction(db, async (tx) => {
     const ref = gameRef();
     const snap = await tx.get(ref);
-    if (!snap.exists()) return;
-    const data = snap.data();
-    if (!isHost(data, hostToken)) return;
-    if (data.phase !== "playing") return;
+  if (!snap.exists()) return;
+  const data = snap.data();
+  if (!isHost(data, hostToken)) return;
+  if (data.phase !== "playing") return;
+  if (!data.startedAt) return;
     const nextTimer = Math.max((data.bombTimer ?? 0) - 1, 0);
     tx.update(ref, { bombTimer: nextTimer, updatedAt: serverTimestamp() });
   });
@@ -412,6 +452,7 @@ export async function resetToLobby(hostToken) {
     feed: [],
     qrNonce: crypto.randomUUID(),
     joinToken: crypto.randomUUID(),
+    startedAt: null,
     updatedAt: serverTimestamp(),
   });
   await batch.commit();

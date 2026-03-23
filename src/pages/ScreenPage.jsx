@@ -13,6 +13,7 @@ import {
   pruneInactivePlayers,
   resetToLobby,
   regenerateQr,
+  seedTestPlayers,
   startGame,
   tickBomb,
   updateHostToken
@@ -161,6 +162,15 @@ export default function ScreenPage() {
               </button>
               <button className="button secondary" onClick={() => resetToLobby(controllerTokenRef.current)} disabled={!isHost}>
                 Reset Lobby
+              </button>
+            </div>
+            <div style={{ marginTop: "12px" }}>
+              <button
+                className="button secondary"
+                onClick={() => seedTestPlayers(controllerTokenRef.current, 4)}
+                disabled={!isHost || gameState.phase !== "lobby"}
+              >
+                Add Test Players
               </button>
             </div>
             <p className="subtitle" style={{ marginTop: "12px" }}>
